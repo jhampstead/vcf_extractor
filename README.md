@@ -31,6 +31,6 @@ To test whether ```extract_vcf``` is working correctly, you can run the followin
 
 If you need to compile ```extract_vcf``` from source, first load HTSLib. You can then compile the executable using the following command:
 
-```gcc -o extract_vcf extract_vcf.c -lhts```
+```gcc -O3 -o extract_vcf extract_vcf.c -lhts```
 
 Compilation was done using gcc 10.2.0 on Linux.
