@@ -17,9 +17,9 @@ If HTSLib is unavailable on your system, you can [download HTSLib here](https://
 ```extract_vcf``` requires an input and output VCF file as command line arguments. These files can be compressed or uncompressed, indexed or unindexed.
 
 By default, ```extract_vcf``` will output the SAMPLE, CHROM, POS, REF, and ALT fields to a tab-delimited file, where SAMPLE is the sample name in the VCF header. However, it accepts several additional options to extract other VCF fields:
-* --id: Extracts the ID field with column name ID;
-* --info: Extracts the specified INFO fields with column names set as INFO tags;
-* --format: Extracts the specified FORMAT fields column names set as FORMAT tags.  
+* --id: Extracts the ID field with column name ID
+* --info: Extracts the specified INFO fields with column names set as INFO tags
+* --format: Extracts the specified FORMAT fields column names set as FORMAT tags
 
 To test whether ```extract_vcf``` is working correctly, you can run the following command:
 
