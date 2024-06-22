@@ -27,7 +27,7 @@ To test whether ```extract_vcf``` is working correctly, you can run the followin
 ./extract_vcf --id --info AC,AF,SOR --format GT,DP test/test.vcf test/test.tsv
 ```
 
-## Compiling annotate_af
+## Compiling extract_vcf
 
 If you need to compile ```extract_vcf``` from source, first load HTSLib. You can then compile the executable using the following command:
 
