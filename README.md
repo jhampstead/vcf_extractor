@@ -1,5 +1,5 @@
 # vcf_extractor
-Extracts VCF fields to a tab-delimited text file
+Extracts VCF fields to a tab-delimited text file.
 
 ## Running extract_vcf
 
