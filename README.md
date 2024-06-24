@@ -14,7 +14,7 @@ module load bioinf/htslib/1.9
 
 If HTSLib is unavailable on your system, you can [download HTSLib here](https://www.htslib.org/download/) and [install from source](https://github.com/samtools/htslib/blob/develop/INSTALL). If ```extract_vcf``` can't find HTSLib at runtime, execution will fail with ```./extract_vcf: error while loading shared libraries: libhts.so.2: cannot open shared object file: No such file or directory```. I compile and run with HTSLib 1.9; other versions of HTSLib have not been tested and may cause unexpected behaviour.
 
-```extract_vcf``` requires an input and output VCF file as command line arguments. These files can be compressed or uncompressed, indexed or unindexed.
+```extract_vcf``` requires an input VCF file and output tab-delimited text file as command line arguments. VCF files can be compressed or uncompressed, indexed or unindexed.
 
 By default, ```extract_vcf``` will output the SAMPLE, CHROM, POS, REF, and ALT fields to a tab-delimited file, where SAMPLE is the sample name in the VCF header. However, it accepts several additional options to extract other VCF fields:
 * --id: Extracts the ID field with column name ID
