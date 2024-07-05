@@ -21,7 +21,6 @@ int parse_fields(char *fields_str, char **fields_arr[]) {
         count++;
         fields = realloc(fields, count * sizeof(char *));
         fields[count-1] = strdup(token);
-        // (*fields_arr)[count++] = strdup(token);
         token = strtok(NULL, ",");
     }
 
@@ -110,7 +109,6 @@ void get_info_value(bcf_hdr_t *hdr, bcf1_t *rec, int info_idx, char *field_name,
         return;
     }
 
-    // bcf_info_t *info = &rec->d.info[info_idx];
     if (info->type == BCF_BT_CHAR && info->len == 1) {
         fprintf(out_fp, "%c", info->v1.i);
     } else if (info->type == BCF_BT_CHAR && info->len > 1) {
@@ -144,7 +142,6 @@ void get_format_value(bcf_hdr_t *hdr, bcf1_t *rec, char *field_name, FILE *out_f
         return;
     }
 
-    // bcf_fmt_t *fmt = &rec->d.fmt[format_idx];
     bcf_fmt_t *fmt = bcf_get_fmt(hdr, rec, field_name);
     for (int j = 0; j < fmt->n; j++) {
         if (j > 0) {
@@ -235,8 +232,9 @@ int main(int argc, char *argv[]) {
         num_format_fields = parse_fields(format_fields_str, &format_fields);
     }
 
+
     // Write header line to output file
-    fprintf(out_fp, "SAMPLE\tCHROM\tPOS\tREF\tALT");
+    fprintf(out_fp, "CHROM\tPOS\tREF\tALT");
     if (include_id) {
         fprintf(out_fp, "\tID");
     }
@@ -246,40 +244,51 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < num_format_fields; i++) {
         fprintf(out_fp, "\t%s", format_fields[i]);
     }
+    
+    // Is there a format field?
+    int nsamples = bcf_hdr_nsamples(hdr);
+    if (nsamples > 0 && num_format_fields > 0) fprintf(out_fp, "\tSAMPLE");
     fprintf(out_fp, "\n");
 
     // Iterate through variants and write to output file
-    int nsamples = bcf_hdr_nsamples(hdr);
     bcf1_t *rec = bcf_init();
     while (bcf_read(fp, hdr, rec) == 0) {
+        kstring_t s = {0, 0, 0};
+
         bcf_unpack(rec, BCF_UN_ALL);
 
-        for (int n = 0; n < nsamples; n++) {
-            kstring_t s = {0, 0, 0};
+        kputs(bcf_hdr_id2name(hdr, rec->rid), &s); // CHROM
+        kputc_('\t', &s); kputl(rec->pos + 1, &s); // POS
+        if (include_id) { kputc_('\t', &s); kputs(rec->d.id, &s); } //ID
 
-            kputs(hdr->samples[n], &s); // SAMPLE NAME
+        kputc_('\t', &s); kputs(rec->d.allele[0], &s); //REF
 
-            kputc('\t', &s); kputs(bcf_hdr_id2name(hdr, rec->rid), &s); // CHROM
-            kputc_('\t', &s); kputl(rec->pos + 1, &s); // POS
-            kputc_('\t', &s); kputs(rec->d.id ? rec->d.id : ".", &s); // ID
+        kputc_('\t', &s); // ALT
+        if (rec->n_allele > 1) {
+            for (int i = 1; i < rec->n_allele; ++i) {
+                if (i > 1) kputc_(',', &s);
+                kputs(rec->d.allele[i], &s);
+            }
+        } else kputc_('.', &s);
 
-            kputc_('\t', &s); // REF
-            if (rec->n_allele > 0) kputs(rec->d.allele[0], &s);
-            else kputc_('.', &s);
+        for (int i = 0; i < num_info_fields; i++) put_info_value(hdr, rec, info_fields[i], &s);
 
-            kputc_('\t', &s); // ALT
-            if (rec->n_allele > 1) {
-                for (int i = 1; i < rec->n_allele; ++i) {
-                    if (i > 1) kputc_(',', &s);
-                    kputs(rec->d.allele[i], &s);
-                }
-            } else kputc_('.', &s);
-
-            for (int i = 0; i < num_info_fields; i++) put_info_value(hdr, rec, info_fields[i], &s);
-            for (int i = 0; i < num_format_fields; i++) put_format_value(hdr, rec, format_fields[i], n, &s);
-
+        if (nsamples == 0 || num_format_fields == 0) {
             fprintf(out_fp, "%s\n", s.s);
+            continue;
         }
+
+        for (int n = 0; n < nsamples; n++) { // If format field exists
+            kstring_t ss = {0};
+            kputs(s.s, &ss);
+            for (int i = 0; i < num_format_fields; i++) put_format_value(hdr, rec, format_fields[i], n, &ss);
+
+            kputc('\t', &ss); kputs(hdr->samples[n], &ss); // SAMPLE NAME
+            fprintf(out_fp, "%s\n", ss.s);
+
+            free(ss.s);
+        }
+        free(s.s);
     }
 
     // Clean up
