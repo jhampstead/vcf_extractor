@@ -8,7 +8,7 @@
 
 // Function to print usage information
 void print_usage(char *program_name) {
-    fprintf(stderr, "Usage: %s [--id] [--info <INFO_FIELDS>] [--format <FORMAT_FIELDS>] <input.vcf> <output.tsv>\n", program_name);
+    fprintf(stderr, "Usage: %s [--id] [--info <INFO_FIELDS>] [--format <FORMAT_FIELDS>] [--split-fields <FIELDS_TO_SPLIT>] [--delimiter <DELIMITER>] <input.vcf> <output.tsv>\n", program_name);
     fprintf(stderr, "Example: %s --id --info AC,AF --format GT,DP input.vcf output.tsv\n", program_name);
 }
 
@@ -26,6 +26,51 @@ int parse_fields(char *fields_str, char **fields_arr[]) {
 
     *fields_arr = fields;
     return count;
+}
+
+void split_fields(char delimiter, const char *fields, char ***field_array, int *size) {
+    char *dstr = strdup(fields);
+
+    // Calculate the number of substrings and allocate
+    int count = 1;
+    for (const char *tmp = dstr; *tmp != '\0'; tmp++) {
+        if (*tmp == delimiter) {
+            count++;
+        }
+    }
+    *field_array = malloc(count * sizeof(char *));
+
+    // Split string
+    int i = 0;
+    char *start = dstr;
+    char *end = strchr(start, delimiter);
+    if (end == NULL) { // Handle case where string cannot be split
+        (*field_array)[i++] = strdup(start);
+    }
+
+    while (end != NULL) {
+        size_t length = end - start;
+        if (length == 0) continue; // String has trailing delimiter
+
+        (*field_array)[i] = malloc((length) * sizeof(char));
+        strncpy((*field_array)[i], start, length);
+        (*field_array)[i][length] = '\0';
+        i++;
+        start = end + 1;
+        end = strchr(start, delimiter);
+    }
+
+    *size = i;
+
+    free(dstr);
+
+}
+
+void free_split_fields(char **field_array, int size) {
+    for (int i = 0; i < size; i++) {
+        free(field_array[i]);
+    }
+    free(field_array);
 }
 
 // Function to check if a field name exists in header
@@ -178,6 +223,8 @@ int main(int argc, char *argv[]) {
     int include_id = 0;
     char *info_fields_str = NULL;
     char *format_fields_str = NULL;
+    char *split_fields_str = NULL;
+    char delimiter = ',';
 
     for (int i = 1; i < argc - 2; i++) {
         if (strcmp(argv[i], "--id") == 0) {
@@ -186,6 +233,10 @@ int main(int argc, char *argv[]) {
             info_fields_str = argv[++i];
         } else if (strcmp(argv[i], "--format") == 0 && i + 1 < argc - 2) {
             format_fields_str = argv[++i];
+        } else if (strcmp(argv[i], "--split-fields") == 0 && i + 1 < argc - 2) {
+            split_fields_str = argv[++i];
+        } else if(strcmp(argv[i], "--delimiter") == 0 && i + 1 < argc - 2) {
+            delimiter = *(argv[++i]);
         } else {
             fprintf(stderr, "Error: Unknown option or missing argument: %s\n", argv[i]);
             print_usage(argv[0]);
@@ -226,12 +277,27 @@ int main(int argc, char *argv[]) {
     if (info_fields_str != NULL) {
         num_info_fields = parse_fields(info_fields_str, &info_fields);
     }
+
     char **format_fields = NULL;
     int num_format_fields = 0;
     if (format_fields_str != NULL) {
         num_format_fields = parse_fields(format_fields_str, &format_fields);
     }
 
+    // Parse subset of INFO fields to split
+    char **split_info_fields = NULL;
+    int num_split_fields = 0;
+    if (split_fields_str != NULL) {
+        num_split_fields = parse_fields(split_fields_str, &split_info_fields);
+        for (int i = 0; i < num_info_fields; i++) {
+            for (int j = 0; j < num_split_fields; j++) {
+                if (strcmp(info_fields[i], split_info_fields[j]) == 0 ) {
+                    continue;
+                }
+            } 
+        }
+
+    }
 
     // Write header line to output file
     fprintf(out_fp, "CHROM\tPOS\tREF\tALT");
@@ -245,7 +311,7 @@ int main(int argc, char *argv[]) {
         fprintf(out_fp, "\t%s", format_fields[i]);
     }
     
-    // Is there a format field?
+    // Check if a FORMAT field exists
     int nsamples = bcf_hdr_nsamples(hdr);
     if (nsamples > 0 && num_format_fields > 0) fprintf(out_fp, "\tSAMPLE");
     fprintf(out_fp, "\n");
@@ -259,11 +325,9 @@ int main(int argc, char *argv[]) {
 
         kputs(bcf_hdr_id2name(hdr, rec->rid), &s); // CHROM
         kputc_('\t', &s); kputl(rec->pos + 1, &s); // POS
-        if (include_id) { kputc_('\t', &s); kputs(rec->d.id, &s); } //ID
-
-        kputc_('\t', &s); kputs(rec->d.allele[0], &s); //REF
-
+        kputc_('\t', &s); kputs(rec->d.allele[0], &s); // REF
         kputc_('\t', &s); // ALT
+
         if (rec->n_allele > 1) {
             for (int i = 1; i < rec->n_allele; ++i) {
                 if (i > 1) kputc_(',', &s);
@@ -271,7 +335,18 @@ int main(int argc, char *argv[]) {
             }
         } else kputc_('.', &s);
 
+        if (include_id) { kputc_('\t', &s); kputs(rec->d.id, &s); } // ID
+
         for (int i = 0; i < num_info_fields; i++) put_info_value(hdr, rec, info_fields[i], &s);
+
+        for (int i = 0; i < num_split_fields; i++) {
+            char **fields_array = NULL;
+            int num_fields = 0;
+            split_fields(delimiter, split_info_fields[i], &fields_array, &num_fields);
+
+            for (int j = 0; j < num_fields; j++) printf("%s\t", fields_array[j]);
+        }
+        printf("\n");
 
         if (nsamples == 0 || num_format_fields == 0) {
             fprintf(out_fp, "%s\n", s.s);
