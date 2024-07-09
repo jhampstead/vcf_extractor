@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <htslib/hfile.h>
 #include <htslib/kstring.h>
 #include <htslib/vcf.h>
@@ -41,29 +42,17 @@ void split_fields(char delimiter, const char *fields, char ***field_array, int *
     *field_array = malloc(count * sizeof(char *));
 
     // Split string
-    int i = 0;
-    char *start = dstr;
-    char *end = strchr(start, delimiter);
-    if (end == NULL) { // Handle case where string cannot be split
-        (*field_array)[i++] = strdup(start);
+    int i = 0, flen = 1, slen = strlen(fields);
+    while (flen < slen) {
+        char *f = dstr + flen;
+        while (dstr[flen] != delimiter && flen < slen) flen++;
+        dstr[flen++] = '\0';
+
+        (*field_array)[i++] = strdup(f);
     }
-
-    while (end != NULL) {
-        size_t length = end - start;
-        if (length == 0) continue; // String has trailing delimiter
-
-        (*field_array)[i] = malloc((length) * sizeof(char));
-        strncpy((*field_array)[i], start, length);
-        (*field_array)[i][length] = '\0';
-        i++;
-        start = end + 1;
-        end = strchr(start, delimiter);
-    }
-
     *size = i;
 
     free(dstr);
-
 }
 
 void free_split_fields(char **field_array, int size) {
@@ -287,16 +276,18 @@ int main(int argc, char *argv[]) {
     // Parse subset of INFO fields to split
     char **split_info_fields = NULL;
     int num_split_fields = 0;
+    int *split_fields_idx = NULL;
+    int num_split_fields_idx = 0;
     if (split_fields_str != NULL) {
         num_split_fields = parse_fields(split_fields_str, &split_info_fields);
+        split_fields_idx = malloc(num_split_fields * sizeof(int));
         for (int i = 0; i < num_info_fields; i++) {
             for (int j = 0; j < num_split_fields; j++) {
                 if (strcmp(info_fields[i], split_info_fields[j]) == 0 ) {
-                    continue;
+                    split_fields_idx[num_split_fields_idx++] = i;
                 }
-            } 
+            }
         }
-
     }
 
     // Write header line to output file
@@ -317,9 +308,11 @@ int main(int argc, char *argv[]) {
     fprintf(out_fp, "\n");
 
     // Iterate through variants and write to output file
+    kstring_t lines[128]; for (int i = 0; i < 128; i++) lines[i] = (kstring_t) {0};
+    int num_lines;
     bcf1_t *rec = bcf_init();
     while (bcf_read(fp, hdr, rec) == 0) {
-        kstring_t s = {0, 0, 0};
+        kstring_t s = {0};
 
         bcf_unpack(rec, BCF_UN_ALL);
 
@@ -327,7 +320,6 @@ int main(int argc, char *argv[]) {
         kputc_('\t', &s); kputl(rec->pos + 1, &s); // POS
         kputc_('\t', &s); kputs(rec->d.allele[0], &s); // REF
         kputc_('\t', &s); // ALT
-
         if (rec->n_allele > 1) {
             for (int i = 1; i < rec->n_allele; ++i) {
                 if (i > 1) kputc_(',', &s);
@@ -337,33 +329,61 @@ int main(int argc, char *argv[]) {
 
         if (include_id) { kputc_('\t', &s); kputs(rec->d.id, &s); } // ID
 
-        for (int i = 0; i < num_info_fields; i++) put_info_value(hdr, rec, info_fields[i], &s);
+        bool add_info = true;
+        for (int i = 0; i < num_info_fields; i++) {
+            for (int j = 0; j < num_split_fields_idx; j++) {
+                if (i == split_fields_idx[j]) {
+                    add_info = false;
+                }  
+            }
+            if (add_info) put_info_value(hdr, rec, info_fields[i], &s);
+        }
 
+        // Duplicate other strings and append to split INFO fields
+        char *(split_fields_array[num_split_fields][128]);
         for (int i = 0; i < num_split_fields; i++) {
             char **fields_array = NULL;
             int num_fields = 0;
-            split_fields(delimiter, split_info_fields[i], &fields_array, &num_fields);
+            kstring_t tmp = {0};
+            put_info_value(hdr, rec, split_info_fields[i], &tmp);
+            split_fields(delimiter, tmp.s, &fields_array, &num_fields);
 
-            for (int j = 0; j < num_fields; j++) printf("%s\t", fields_array[j]);
+            num_lines = num_fields;
+            for (int j = 0; j < num_fields; j++) {
+                split_fields_array[i][j] = fields_array[j];
+            }
+            free(tmp.s);
         }
-        printf("\n");
 
-        if (nsamples == 0 || num_format_fields == 0) {
-            fprintf(out_fp, "%s\n", s.s);
-            continue;
+        for (int i = 0; i < num_lines; i++) {
+            kputs(s.s, &(lines[i]));
+            for (int j = 0; j < num_split_fields; j++) {
+                kputc('\t', &(lines[i]));
+                kputs(split_fields_array[j][i], &(lines[i]));
+            }
+            printf("%s\n", lines[i].s);
+
+            // Handle missing FORMAT columns
+            if (nsamples == 0 || num_format_fields == 0) {
+                fprintf(out_fp, "%s\n", lines[i].s);
+                continue;
+            }
         }
 
         for (int n = 0; n < nsamples; n++) { // If format field exists
-            kstring_t ss = {0};
-            kputs(s.s, &ss);
-            for (int i = 0; i < num_format_fields; i++) put_format_value(hdr, rec, format_fields[i], n, &ss);
+            for (int i = 0; i < num_lines; i++) {
+                kstring_t ss = {0};
+                kputs(lines[i].s, &ss);
+                for (int i = 0; i < num_format_fields; i++) put_format_value(hdr, rec, format_fields[i], n, &ss);
 
-            kputc('\t', &ss); kputs(hdr->samples[n], &ss); // SAMPLE NAME
-            fprintf(out_fp, "%s\n", ss.s);
+                kputc('\t', &ss); kputs(hdr->samples[n], &ss); // SAMPLE NAME
+                fprintf(out_fp, "%s\n", ss.s);
 
-            free(ss.s);
+                free(ss.s);
+                free(lines[i].s);
+                lines[i] = (kstring_t) {0}; // Resets lines to prevent concatenating variants
+            }
         }
-        free(s.s);
     }
 
     // Clean up
