@@ -364,7 +364,7 @@ int main(int argc, char *argv[]) {
                 kputc('\t', &(lines[i]));
                 kputs(split_fields_array[j][i], &(lines[i]));
             }
-            printf("%s\n", lines[i].s);
+            // printf("%s\n", lines[i].s);
 
             // Handle missing FORMAT columns
             if (nsamples == 0 || num_format_fields == 0) {
