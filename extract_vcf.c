@@ -9,7 +9,7 @@
 
 // Function to print usage information
 void print_usage(char *program_name) {
-    fprintf(stderr, "Usage: %s [--id] [--info <INFO_FIELDS>] [--format <FORMAT_FIELDS>] [--split-fields <FIELDS_TO_SPLIT>] [--delimiter <DELIMITER>] <input.vcf> <output.tsv>\n", program_name);
+    fprintf(stderr, "Usage: %s [--id] [--info <INFO_FIELDS>] [--format <FORMAT_FIELDS>] [--split-fields <FIELDS_TO_SPLIT>] [--delimiter <DELIMITER>] [--sample-names <SAMPLE_NAME>] <input.vcf> <output.tsv>\n", program_name);
     fprintf(stderr, "Example: %s --id --info AC,AF --format GT,DP input.vcf output.tsv\n", program_name);
 }
 
@@ -214,6 +214,7 @@ int main(int argc, char *argv[]) {
     char *format_fields_str = NULL;
     char *split_fields_str = NULL;
     char delimiter = ',';
+    char *sample_names = NULL;
 
     for (int i = 1; i < argc - 2; i++) {
         if (strcmp(argv[i], "--id") == 0) {
@@ -224,8 +225,10 @@ int main(int argc, char *argv[]) {
             format_fields_str = argv[++i];
         } else if (strcmp(argv[i], "--split-fields") == 0 && i + 1 < argc - 2) {
             split_fields_str = argv[++i];
-        } else if(strcmp(argv[i], "--delimiter") == 0 && i + 1 < argc - 2) {
+        } else if (strcmp(argv[i], "--delimiter") == 0 && i + 1 < argc - 2) {
             delimiter = *(argv[++i]);
+        } else if(strcmp(argv[i], "--sample-names") == 0 && i + 1 < argc - 2) {
+            sample_names = argv[++i];
         } else {
             fprintf(stderr, "Error: Unknown option or missing argument: %s\n", argv[i]);
             print_usage(argv[0]);
@@ -370,13 +373,21 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        char **sample_array = malloc(nsamples * sizeof(char *));
+        parse_fields(sample_names,&sample_array);
         for (int n = 0; n < nsamples; n++) { // If format field exists
             for (int i = 0; i < num_lines; i++) {
                 kstring_t ss = {0};
                 kputs(lines[i].s, &ss);
                 for (int i = 0; i < num_format_fields; i++) put_format_value(hdr, rec, format_fields[i], n, &ss);
 
-                kputc('\t', &ss); kputs(hdr->samples[n], &ss); // SAMPLE NAME
+                if(sample_names) {
+                    char **sample_array;
+                    parse_fields(sample_names,&sample_array);
+                    kputc('\t', &ss); kputs(sample_array[n], &ss); // SAMPLE name from command line
+                } else {
+                    kputc('\t', &ss); kputs(hdr->samples[n], &ss); // SAMPLE field from VCF header
+                }
                 fprintf(out_fp, "%s\n", ss.s);
 
                 free(ss.s);
