@@ -30,7 +30,6 @@ Additionally, ```extract_vcf``` accepts options designed to transform VCF fields
 chr1 654823 A T missense_variant,missense_variant,synonymous_variant
 
 ./extract_vcf --info vep_csq --split-fields vep_csq in.vcf out.tsv
-
 chr1 654823 A T missense_variant
 chr1 654823 A T missense_variant
 chr1 654823 A T synonymous_variant

@@ -13,6 +13,20 @@ void print_usage(char *program_name) {
     fprintf(stderr, "Example: %s --id --info AC,AF --format GT,DP input.vcf output.tsv\n", program_name);
 }
 
+// Function to optionally enable piping to STDOUT
+FILE *fopen_or_stdout(const char *filename, const char *mode) {
+    if (filename[0] == '-' && filename[1] == '\0') {
+        return stdout;
+    } else {
+        FILE *file = fopen(filename, mode);
+        if (!file) {
+            perror("fopen");
+            exit(EXIT_FAILURE);
+        }
+        return file;
+    }
+}
+
 // Function to parse comma-separated fields into an array
 int parse_fields(char *fields_str, char **fields_arr[]) {
     char **fields = malloc(0);
@@ -77,7 +91,7 @@ void put_info_value(bcf_hdr_t *hdr, bcf1_t *rec, char *tag, kstring_t *s) {
     void *data;
     int nvalues;
     bcf_get_info_values(hdr, rec, tag, &data, &nvalues, info->type);
-    if (nvalues > 1) {
+    if (info->type != BCF_BT_CHAR && info->vptr_len > 1) {
         bcf_fmt_array(s, info->len, info->type, info->vptr);
         return;
     }
@@ -87,6 +101,7 @@ void put_info_value(bcf_hdr_t *hdr, bcf1_t *rec, char *tag, kstring_t *s) {
             kputc('.', s);
         else 
             kputd(*((float *) data), s);
+            
     } else if (info->type == BCF_BT_CHAR) {
         kputsn((char *) info->vptr, info->vptr_len, s);
     } else if (info->type <= BCF_BT_INT32) {
@@ -174,7 +189,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Open output TSV file for writing
-    FILE *out_fp = fopen(output_file, "w");
+    FILE *out_fp = fopen_or_stdout(output_file, "w");
     if (out_fp == NULL) {
         fprintf(stderr, "Error: Failed to open output TSV file for writing: %s\n", output_file);
         hts_close(fp);
