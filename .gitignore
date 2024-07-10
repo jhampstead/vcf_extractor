@@ -1,1 +1,3 @@
 extract_vcf
+test/janneke_test.tsv
+test/tuncated_SW48_Resist_200nM_filtered.vcf

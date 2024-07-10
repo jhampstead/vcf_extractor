@@ -55,13 +55,6 @@ void split_fields(char delimiter, const char *fields, char ***field_array, int *
     free(dstr);
 }
 
-void free_split_fields(char **field_array, int size) {
-    for (int i = 0; i < size; i++) {
-        free(field_array[i]);
-    }
-    free(field_array);
-}
-
 // Function to check if a field name exists in header
 int field_exists_in_header(bcf_hdr_t *hdr, char *field_name) {
     return bcf_hdr_id2int(hdr, BCF_DT_ID, field_name) >= 0;
@@ -81,18 +74,21 @@ void put_info_value(bcf_hdr_t *hdr, bcf1_t *rec, char *tag, kstring_t *s) {
         return;
     }
 
-    if (info->len != 1) {
+    void *data;
+    int nvalues;
+    bcf_get_info_values(hdr, rec, tag, &data, &nvalues, info->type);
+    if (nvalues > 1) {
         bcf_fmt_array(s, info->len, info->type, info->vptr);
         return;
     }
 
     if (info->type == BCF_BT_FLOAT) {
         if (bcf_float_is_missing(info->v1.f) )
-            kputc_('.', s);
-        else
-            kputd(info->v1.f, s);
+            kputc('.', s);
+        else 
+            kputd(*((float *) data), s);
     } else if (info->type == BCF_BT_CHAR) {
-        kputc_(info->v1.i, s);
+        kputsn((char *) info->vptr, info->vptr_len, s);
     } else if (info->type <= BCF_BT_INT32) {
         int64_t missing[] = {
             0, // BCF_BT_NULL
@@ -101,9 +97,9 @@ void put_info_value(bcf_hdr_t *hdr, bcf1_t *rec, char *tag, kstring_t *s) {
             bcf_int32_missing,
         };
         if (info->v1.i == missing[info->type])
-            kputc_('.', s);
+            kputc('.', s);
         else
-            kputw(info->v1.i, s);
+            kputw(*((int32_t *) data), s);
     }
 
     return;
@@ -127,75 +123,6 @@ void put_format_value(bcf_hdr_t *hdr, bcf1_t *rec, char *tag, int sample, kstrin
         bcf_format_gt(fmt, sample, s);
     } else {
         bcf_fmt_array(s, fmt->n, fmt->type, fmt->p + sample * (size_t) fmt->size);
-    }
-}
-
-// Function to get INFO field value
-void get_info_value(bcf_hdr_t *hdr, bcf1_t *rec, int info_idx, char *field_name, FILE *out_fp) {
-    if (rec->d.info == NULL) {
-        fprintf(out_fp, ".");
-        return;
-    }
-
-    bcf_info_t *info = bcf_get_info(hdr, rec, field_name);
-    if (info == NULL) {
-        fprintf(out_fp, ".");
-        return;
-    }
-
-    if (info->type == BCF_BT_CHAR && info->len == 1) {
-        fprintf(out_fp, "%c", info->v1.i);
-    } else if (info->type == BCF_BT_CHAR && info->len > 1) {
-        fprintf(out_fp, "%.*s", info->len, info->vptr);
-    } else if (info->type == BCF_BT_FLOAT) {
-        fprintf(out_fp, "%.6f", info->v1.f);
-    } else if (info->type == BCF_BT_INT8 || info->type == BCF_BT_INT16 || info->type == BCF_BT_INT32) {
-        fprintf(out_fp, "%d", info->v1.i);
-    } else {
-        fprintf(out_fp, ".");
-    }
-}
-
-// Function to get FORMAT field value
-void get_format_value(bcf_hdr_t *hdr, bcf1_t *rec, char *field_name, FILE *out_fp) {
-    if (rec->d.fmt == NULL) {
-        fprintf(out_fp, ".");
-        return;
-    }
-
-    int format_idx = -1;
-    for(int i = 0; i < rec->n_fmt; i++) {
-        if (strcmp(hdr->id[BCF_DT_ID][rec->d.fmt[i].id].key, field_name) == 0) {
-            format_idx = i;
-            break;
-        }
-    }
-
-    if (format_idx == -1) {
-        fprintf(out_fp, ".");
-        return;
-    }
-
-    bcf_fmt_t *fmt = bcf_get_fmt(hdr, rec, field_name);
-    for (int j = 0; j < fmt->n; j++) {
-        if (j > 0) {
-            fprintf(out_fp, ",");
-        }
-        if (fmt->type == BCF_BT_CHAR && fmt->size == 1) {
-            fprintf(out_fp, "%c", fmt->p[j]);
-        } else if (fmt->type == BCF_BT_CHAR && fmt->size > 1) {
-            fprintf(out_fp, "%.*s", fmt->size, &fmt->p[j * fmt->size]);
-        } else if (fmt->type == BCF_BT_FLOAT) {
-            float value;
-            memcpy(&value, &fmt->p[j * sizeof(float)], sizeof(float));
-            fprintf(out_fp, "%.6f", value);
-        } else if (fmt->type == BCF_BT_INT8 || fmt->type == BCF_BT_INT16 || fmt->type == BCF_BT_INT32) {
-            int32_t value;
-            memcpy(&value, &fmt->p[j * sizeof(int32_t)], sizeof(int32_t));
-            fprintf(out_fp, "%d", value);
-        } else {
-            fprintf(out_fp, ".");
-        }
     }
 }
 
@@ -316,22 +243,24 @@ int main(int argc, char *argv[]) {
     bcf1_t *rec = bcf_init();
     while (bcf_read(fp, hdr, rec) == 0) {
         kstring_t s = {0};
+        num_lines = 1;
 
         bcf_unpack(rec, BCF_UN_ALL);
 
         kputs(bcf_hdr_id2name(hdr, rec->rid), &s); // CHROM
-        kputc_('\t', &s); kputl(rec->pos + 1, &s); // POS
-        kputc_('\t', &s); kputs(rec->d.allele[0], &s); // REF
-        kputc_('\t', &s); // ALT
+        kputc('\t', &s); kputl(rec->pos + 1, &s); // POS
+        kputc('\t', &s); kputs(rec->d.allele[0], &s); // REF
+        kputc('\t', &s); // ALT
         if (rec->n_allele > 1) {
             for (int i = 1; i < rec->n_allele; ++i) {
                 if (i > 1) kputc_(',', &s);
                 kputs(rec->d.allele[i], &s);
             }
-        } else kputc_('.', &s);
+        } else kputc('.', &s);
 
-        if (include_id) { kputc_('\t', &s); kputs(rec->d.id, &s); } // ID
+        if (include_id) { kputc('\t', &s); kputs(rec->d.id, &s); } // ID
 
+        // Print INFO fields
         bool add_info = true;
         for (int i = 0; i < num_info_fields; i++) {
             for (int j = 0; j < num_split_fields_idx; j++) {
@@ -364,7 +293,6 @@ int main(int argc, char *argv[]) {
                 kputc('\t', &(lines[i]));
                 kputs(split_fields_array[j][i], &(lines[i]));
             }
-            // printf("%s\n", lines[i].s);
 
             // Handle missing FORMAT columns
             if (nsamples == 0 || num_format_fields == 0) {
@@ -372,9 +300,13 @@ int main(int argc, char *argv[]) {
                 continue;
             }
         }
+        
+        // Handle FORMAT and SAMPLE fields
+        if(sample_names) {
+            char **sample_array = malloc(nsamples * sizeof(char *));
+            parse_fields(sample_names,&sample_array);
+        }
 
-        char **sample_array = malloc(nsamples * sizeof(char *));
-        parse_fields(sample_names,&sample_array);
         for (int n = 0; n < nsamples; n++) { // If format field exists
             for (int i = 0; i < num_lines; i++) {
                 kstring_t ss = {0};
