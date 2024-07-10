@@ -25,15 +25,16 @@ By default, ```extract_vcf``` will output the SAMPLE, CHROM, POS, REF, and ALT f
 Additionally, ```extract_vcf``` accepts options designed to transform VCF fields parsed by ```bcftools +split-vep``` or natively comma-separated by transcript into long format:
 * --split-fields (and --delimiter): INFO fields specified in --split-fields are split on --delimiter (by default ','), with each element appearing on a new line
 
-```./extract_vcf --info vep_csq in.vcf out.tsv```
+```
+./extract_vcf --info vep_csq in.vcf out.tsv
+chr1 654823 A T missense_variant,missense_variant,synonymous_variant
 
-```chr1 654823 A T missense_variant,missense_variant,synonymous_variant```
+./extract_vcf --info vep_csq --split-fields vep_csq in.vcf out.tsv
 
-```./extract_vcf --info	vep_csq	--split-fields vep_csq in.vcf out.tsv```
-
-```chr1 654823 A T missense_variant```
-```chr1	654823 A T missense_variant```
-```chr1	654823 A T synonymous_variant```
+chr1 654823 A T missense_variant
+chr1 654823 A T missense_variant
+chr1 654823 A T synonymous_variant
+```
 
 To test whether ```extract_vcf``` is working correctly, you can run the following command:
 
