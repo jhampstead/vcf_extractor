@@ -20,6 +20,20 @@ By default, ```extract_vcf``` will output the SAMPLE, CHROM, POS, REF, and ALT f
 * --id: Extracts the ID field with column name ID
 * --info: Extracts the specified INFO fields with column names set as INFO tags
 * --format: Extracts the specified FORMAT fields with column names set as FORMAT tags
+* --sample-names: Add sample names from command line input rather than using the sample names present in the VCF header; the number of names specified must match the number of samples within the VCF file
+
+Additionally, ```extract_vcf``` accepts options designed to transform VCF fields parsed by ```bcftools +split-vep``` or natively comma-separated by transcript into long format:
+* --split-fields (and --delimiter): INFO fields specified in --split-fields are split on --delimiter (by default ','), with each element appearing on a new line
+
+```./extract_vcf --info vep_csq in.vcf out.tsv```
+
+```chr1 654823 A T missense_variant,missense_variant,synonymous_variant```
+
+```./extract_vcf --info	vep_csq	--split-fields vep_csq in.vcf out.tsv```
+
+```chr1 654823 A T missense_variant```
+```chr1	654823 A T missense_variant```
+```chr1	654823 A T synonymous_variant```
 
 To test whether ```extract_vcf``` is working correctly, you can run the following command:
 
@@ -29,7 +43,7 @@ To test whether ```extract_vcf``` is working correctly, you can run the followin
 
 ## Compiling extract_vcf
 
-If you need to compile ```extract_vcf``` from source, first load HTSLib. You can then compile the executable using the following command:
+If you need to compile ```extract_vcf``` from source, first install or load HTSLib. You can then compile the executable using the following command:
 
 ```gcc -O3 -o extract_vcf extract_vcf.c -lhts```
 
